@@ -141,6 +141,12 @@ main() {
         return 0
     fi
 
+    # Handle session-closed: write close marker (session may be gone soon)
+    if [[ "$event_type" == "session-closed" ]]; then
+        "$CURRENT_DIR/writer.sh" close "$session_name"
+        return 0
+    fi
+
     # Initialize debounce
     init_debounce
 

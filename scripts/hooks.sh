@@ -8,8 +8,8 @@ source "$CURRENT_DIR/helpers.sh"
 
 IDX="$MUXSCRIBE_HOOK_INDEX"
 
-# All hooks we register, with the event name passed to capture.sh
-HOOKS=(
+# Global hooks (set with -g)
+GLOBAL_HOOKS=(
     # Structure events
     "after-new-window"
     "after-split-window"
@@ -34,16 +34,26 @@ HOOKS=(
     "after-send-keys"
 
     # Lifecycle events
-    "pane-exited"
     "session-closed"
+)
+
+# Pane-level hooks (set with -gp or -gw)
+PANE_HOOKS=(
+    "pane-exited"
 )
 
 register_hooks() {
     local session_name="$1"
     local capture_script="$CURRENT_DIR/capture.sh"
 
-    for hook in "${HOOKS[@]}"; do
+    for hook in "${GLOBAL_HOOKS[@]}"; do
         tmux set-hook -g "${hook}[${IDX}]" \
+            "run-shell \"$capture_script '${hook}' '#{session_name}'\""
+    done
+
+    # Pane-level hooks use -gw (global window/pane scope)
+    for hook in "${PANE_HOOKS[@]}"; do
+        tmux set-hook -gw "${hook}[${IDX}]" \
             "run-shell \"$capture_script '${hook}' '#{session_name}'\""
     done
 
@@ -52,8 +62,11 @@ register_hooks() {
 }
 
 unregister_hooks() {
-    for hook in "${HOOKS[@]}"; do
+    for hook in "${GLOBAL_HOOKS[@]}"; do
         tmux set-hook -gu "${hook}[${IDX}]" 2>/dev/null
+    done
+    for hook in "${PANE_HOOKS[@]}"; do
+        tmux set-hook -guw "${hook}[${IDX}]" 2>/dev/null
     done
 }
 
