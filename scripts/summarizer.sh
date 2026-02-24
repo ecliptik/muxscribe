@@ -47,17 +47,15 @@ start_daemon() {
     local interval
     interval=$(get_tmux_option "$MUXSCRIBE_OPT_AI_INTERVAL" "$MUXSCRIBE_DEFAULT_AI_INTERVAL")
 
-    # Generate a unique session ID for claude --resume
-    local session_id
-    session_id="muxscribe-$(date +%s)-$$"
-    echo "$session_id" > "$session_id_file"
+    # Clear any stale session ID file (first claude call will create a fresh session)
+    rm -f "$session_id_file"
 
     # Initialize empty queue file
     : > "$queue_file"
 
     # Launch daemon in background
-    _run_daemon "$session_name" "$session_id" "$model" "$interval" \
-        "$queue_file" "$lock_file" "$summary_file" &
+    _run_daemon "$session_name" "$session_id_file" "$model" "$interval" \
+        "$queue_file" "$lock_file" "$summary_file" </dev/null >/dev/null 2>&1 &
     local daemon_pid=$!
 
     echo "$daemon_pid" > "$pid_file"
@@ -103,17 +101,12 @@ stop_daemon() {
 
     # Final flush: process any remaining events
     if [[ -f "$queue_file" ]] && [[ -s "$queue_file" ]]; then
-        local session_id=""
-        [[ -f "$session_id_file" ]] && session_id=$(cat "$session_id_file" 2>/dev/null)
+        local batch_content
+        batch_content=$(cat "$queue_file")
+        : > "$queue_file"
 
-        if [[ -n "$session_id" ]]; then
-            local batch_content
-            batch_content=$(cat "$queue_file")
-            : > "$queue_file"
-
-            _call_claude "$session_id" "$model" "$summary_file" \
-                "Final events before recording stopped:\n$batch_content\n\nUpdate $summary_file with a final summary. Add a closing note that recording has ended."
-        fi
+        _call_claude "$session_id_file" "$model" "$summary_file" \
+            "Final events before recording stopped:\n$batch_content\n\nUpdate $summary_file with a final summary. Add a closing note that recording has ended."
     fi
 
     # Cleanup
@@ -139,25 +132,23 @@ flush_queue() {
         return 0
     fi
 
-    local session_id=""
-    [[ -f "$session_id_file" ]] && session_id=$(cat "$session_id_file" 2>/dev/null)
-    [[ -z "$session_id" ]] && return 1
+    [[ ! -f "$session_id_file" ]] && return 1
 
-    _process_batch "$session_id" "$model" "$queue_file" "$lock_file" "$summary_file"
+    _process_batch "$session_id_file" "$model" "$queue_file" "$lock_file" "$summary_file"
 }
 
 # Internal: main daemon loop
 _run_daemon() {
     local session_name="$1"
-    local session_id="$2"
+    local session_id_file="$2"
     local model="$3"
     local interval="$4"
     local queue_file="$5"
     local lock_file="$6"
     local summary_file="$7"
 
-    # Send initial prompt to establish context
-    _call_claude "$session_id" "$model" "$summary_file" \
+    # Send initial prompt to establish context (no --resume on first call)
+    _call_claude "$session_id_file" "$model" "$summary_file" \
         "Recording started for tmux session '$session_name'. I'll send you batches of terminal events. After each batch, update the summary file at $summary_file."
 
     # Poll loop
@@ -173,13 +164,13 @@ _run_daemon() {
         summary_file=$(resolve_summary_file "$session_name")
 
         # Process any queued events
-        _process_batch "$session_id" "$model" "$queue_file" "$lock_file" "$summary_file"
+        _process_batch "$session_id_file" "$model" "$queue_file" "$lock_file" "$summary_file"
     done
 }
 
 # Internal: read and process a batch of events from the queue
 _process_batch() {
-    local session_id="$1"
+    local session_id_file="$1"
     local model="$2"
     local queue_file="$3"
     local lock_file="$4"
@@ -209,29 +200,49 @@ _process_batch() {
         return 0
     fi
 
-    _call_claude "$session_id" "$model" "$summary_file" \
+    _call_claude "$session_id_file" "$model" "$summary_file" \
         "New events:\n$batch_content\n\nUpdate $summary_file with a summary of these events."
 }
 
 # Internal: invoke claude CLI with proper environment
 _call_claude() {
-    local session_id="$1"
+    local session_id_file="$1"
     local model="$2"
     local summary_file="$3"
     local prompt="$4"
 
+    local resume_args=()
+    if [[ -f "$session_id_file" ]]; then
+        local sid
+        sid=$(cat "$session_id_file" 2>/dev/null)
+        if [[ -n "$sid" ]]; then
+            resume_args=(--resume "$sid")
+        fi
+    fi
+
     # Unset CLAUDECODE to allow spawning claude inside a Claude Code session
-    (
+    local output
+    output=$(
         unset CLAUDECODE
         claude -p \
-            --resume "$session_id" \
+            "${resume_args[@]}" \
             --model "$model" \
+            --output-format json \
             --allowedTools "Read,Write" \
             --permission-mode bypassPermissions \
             --append-system-prompt "You are muxscribe, a development session logger. You will receive batches of tmux terminal events. Your job is to maintain a concise, readable development log summary at $summary_file. Write in markdown with YAML frontmatter (session, date, type: summary, tags: [muxscribe, dev-log, ai-summary]). Group related events. Focus on WHAT the developer is doing (editing files, running tests, debugging) not raw terminal output. Use ## headers for major activities with time ranges, bullet points for details. Be concise — this is a dev log, not a transcript. Always read the existing file first before writing updates." \
             "$prompt" \
             2>/dev/null
     )
+
+    # Extract and save the session ID for --resume on subsequent calls
+    if [[ -n "$output" ]] && [[ -n "$session_id_file" ]]; then
+        local new_sid
+        new_sid=$(printf '%s' "$output" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
+        if [[ -n "$new_sid" ]]; then
+            printf '%s' "$new_sid" > "$session_id_file"
+        fi
+    fi
 }
 
 main() {
