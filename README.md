@@ -1,24 +1,24 @@
 # muxscribe
 
-A tmux plugin that records session activity and writes structured markdown development logs. Designed for Obsidian import and later AI summarization into blog posts.
+A tmux plugin that watches your terminal activity and produces AI-generated development logs via Claude CLI.
 
 ## Features
 
-- **Event-driven capture** — hooks into tmux events (window creation, pane splits, navigation, etc.)
-- **Full pane snapshots** — captures visible terminal content on every event
-- **Structured markdown output** — YAML frontmatter, timestamped entries, code blocks
-- **Daily log rotation** — one markdown file per day, organized by session
-- **XDG-compliant** — logs to `$XDG_STATE_HOME/muxscribe/` by default
-- **Manual toggle** — start/stop recording with a keybinding
-- **Debounced** — high-frequency events (keystrokes, pane switches) are coalesced
+- **AI-powered summaries** — Claude reads your actual terminal content and writes structured session summaries
+- **Event-driven capture** — hooks into tmux events (window switches, pane splits, keystrokes, etc.)
+- **Active pane content** — captures visible terminal output so Claude knows what you're actually doing
+- **Live updating** — background daemon polls every 10s, feeding batches to Claude with `--resume` for conversation continuity
+- **Debounced** — high-frequency events (keystrokes, pane switches, resizes) are coalesced (default 5s)
 - **Status bar indicator** — shows `● REC` in your tmux status bar when recording
-- **AI summarization** — optional real-time log summarization via Claude CLI
+- **Daily rotation** — summary files rotate at midnight
+- **XDG-compliant** — summaries to `$XDG_STATE_HOME/muxscribe/`, runtime in `$XDG_RUNTIME_DIR/muxscribe/`
+- **Manual toggle** — start/stop recording with `prefix + M`
 
 ## Requirements
 
 - tmux 3.2+ (tested on 3.5a)
 - [TPM](https://github.com/tmux-plugins/tpm) (Tmux Plugin Manager)
-- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (optional, for AI summarization)
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (must be installed and authenticated)
 
 ## Installation
 
@@ -28,6 +28,7 @@ Add to your `~/.tmux.conf`:
 
 ```tmux
 set -g @plugin 'yourusername/muxscribe'
+set -g @muxscribe-ai 'on'
 ```
 
 Then press `prefix + I` to install.
@@ -42,6 +43,7 @@ Add to your `~/.tmux.conf`:
 
 ```tmux
 run-shell ~/.tmux/plugins/muxscribe/muxscribe.tmux
+set -g @muxscribe-ai 'on'
 ```
 
 ## Usage
@@ -50,102 +52,6 @@ run-shell ~/.tmux/plugins/muxscribe/muxscribe.tmux
 |---|---|
 | `prefix + M` | Toggle recording on/off |
 | `prefix + Alt-m` | Show recording status |
-
-## Configuration
-
-All options are set in `~/.tmux.conf` before the TPM run line:
-
-```tmux
-# Change toggle key (default: M)
-set -g @muxscribe-key 'R'
-
-# Change status key (default: M-m)
-set -g @muxscribe-status-key 'M-r'
-
-# Override log directory (default: $XDG_STATE_HOME/muxscribe)
-set -g @muxscribe-log-dir '~/my-dev-logs'
-
-# Debounce interval in seconds for high-frequency events (default: 5)
-set -g @muxscribe-debounce '3'
-
-# Enable AI summarization (default: off, requires claude CLI)
-set -g @muxscribe-ai 'on'
-
-# Model for AI summarization (default: sonnet)
-set -g @muxscribe-ai-model 'haiku'
-
-# Batch interval in seconds for AI processing (default: 10)
-set -g @muxscribe-ai-interval '10'
-```
-
-## Status Bar Indicator
-
-muxscribe sets the `@muxscribe-recording` session option while recording. Add the indicator to your status bar in `~/.tmux.conf`:
-
-### Static indicator
-
-Use `#{@muxscribe-status}` for a simple non-animated indicator:
-
-```tmux
-set -g status-right '#{@muxscribe-status} | %H:%M'
-```
-
-Shows `● REC` when recording, empty when stopped.
-
-### Blinking indicator
-
-For a blinking effect (alternates between `●` and `○`), use the bundled `status.sh` script:
-
-```tmux
-set -g status-interval 2
-set -g status-right '#(~/.tmux/plugins/muxscribe/scripts/status.sh) | %H:%M'
-```
-
-This works in terminals that don't support ANSI blink (e.g. Ghostty). The `status-interval` controls the blink speed — 2 seconds gives a steady pulse.
-
-## Output
-
-Logs are written to `$XDG_STATE_HOME/muxscribe/<session-name>/YYYY-MM-DD.md` (defaults to `~/.local/state/muxscribe/`).
-
-Each file has YAML frontmatter for Obsidian and timestamped entries with terminal snapshots:
-
-```markdown
----
-session: my-project
-date: 2026-02-23
-started: "2026-02-23T10:30:00"
-host: myhost
-tags: [muxscribe, dev-log]
----
-
-# Session: my-project — 2026-02-23
-
-## 10:30:00 — session-start
-
-Recording started
-
-### Window 0: editor (active)
-
-**Pane 0** * — `nvim` in `/home/user/project`
-\```text
-  1  src/main.rs
-  2  src/lib.rs
-\```
-```
-
-## AI Summarization
-
-When enabled, muxscribe runs a background daemon that feeds terminal events to Claude CLI in batches. Claude maintains a concise development log summary alongside the raw event logs.
-
-The summary file is written to `$XDG_STATE_HOME/muxscribe/<session>/summary-YYYY-MM-DD.md` and uses the same YAML frontmatter format for Obsidian compatibility.
-
-**How it works:**
-1. Each captured event appends a condensed one-line description to an event queue
-2. A background daemon polls the queue every N seconds (configurable)
-3. Batched events are sent to `claude` CLI with `--resume` to maintain conversation context
-4. Claude reads and updates the summary file after each batch
-
-**Requirements:** The `claude` CLI must be installed and authenticated. AI summarization is opt-in — set `@muxscribe-ai on` in your `.tmux.conf`.
 
 ### Quickstart
 
@@ -173,7 +79,6 @@ The summary file is written to `$XDG_STATE_HOME/muxscribe/<session>/summary-YYYY
 5. View the live summary:
 
    ```bash
-   # tail the summary as Claude updates it
    tail -f ~/.local/state/muxscribe/<session>/summary-$(date +%Y-%m-%d).md
    ```
 
@@ -183,14 +88,92 @@ The summary file is written to `$XDG_STATE_HOME/muxscribe/<session>/summary-YYYY
    prefix + M        # stop recording (flushes remaining events to Claude)
    ```
 
-You can tune the behavior with these options:
+## Configuration
+
+All options are set in `~/.tmux.conf` before the TPM run line:
 
 ```tmux
-set -g @muxscribe-ai-model 'haiku'    # faster/cheaper model (default: sonnet)
-set -g @muxscribe-ai-interval '30'    # poll less frequently (default: 10s)
+# Change toggle key (default: M)
+set -g @muxscribe-key 'R'
+
+# Change status key (default: M-m)
+set -g @muxscribe-status-key 'M-r'
+
+# Override log directory (default: $XDG_STATE_HOME/muxscribe)
+set -g @muxscribe-log-dir '~/my-dev-logs'
+
+# Debounce interval in seconds for high-frequency events (default: 5)
+set -g @muxscribe-debounce '3'
+
+# Enable AI summarization (default: off)
+set -g @muxscribe-ai 'on'
+
+# Model for AI summarization (default: sonnet)
+set -g @muxscribe-ai-model 'haiku'
+
+# Batch interval in seconds for AI processing (default: 10)
+set -g @muxscribe-ai-interval '10'
 ```
 
-To manually flush pending events or control the daemon:
+## Status Bar Indicator
+
+### Static indicator
+
+Use `#{@muxscribe-status}` for a simple non-animated indicator:
+
+```tmux
+set -g status-right '#{@muxscribe-status} | %H:%M'
+```
+
+Shows `● REC` when recording, empty when stopped.
+
+### Blinking indicator
+
+For a blinking effect (alternates between `●` and `○`), use the bundled `status.sh` script:
+
+```tmux
+set -g status-interval 2
+set -g status-right '#(~/.tmux/plugins/muxscribe/scripts/status.sh) | %H:%M'
+```
+
+This works in terminals that don't support ANSI blink (e.g. Ghostty). The `status-interval` controls the blink speed — 2 seconds gives a steady pulse.
+
+## Output
+
+Summaries are written to `$XDG_STATE_HOME/muxscribe/<session>/summary-YYYY-MM-DD.md` (defaults to `~/.local/state/muxscribe/`).
+
+Example summary output:
+
+```markdown
+---
+session: "0"
+date: 2026-02-23
+type: summary
+tags: [muxscribe, dev-log, ai-summary]
+---
+
+## 10:30–11:15 — Debugging Authentication Bug
+
+- Investigated failing login flow in `src/auth.rs`
+- Root cause: token expiry check was off by one hour due to timezone handling
+- Applied fix, added regression test in `tests/auth_test.rs`
+- All tests passing after fix
+
+## 11:15–11:45 — Code Review and PR
+
+- Reviewed PR #42 feedback from teammate
+- Addressed nit about error message wording
+- Pushed updated branch and re-requested review
+```
+
+## How it works
+
+1. **Hooks fire** on tmux activity (window switches, keystrokes, pane splits, etc.)
+2. **capture.sh** snapshots the active pane's visible content and appends a condensed event with terminal content to an event queue
+3. **Summarizer daemon** polls the queue every N seconds, feeds batches to `claude --resume` maintaining conversation context
+4. **Claude reads and updates** the summary file after each batch
+
+### Manual daemon control
 
 ```bash
 bash scripts/summarizer.sh flush <session>   # process queued events now
