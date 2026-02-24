@@ -44,8 +44,7 @@ start_recording() {
     # Register hooks (global — shared across sessions)
     "$CURRENT_DIR/hooks.sh" register "$session_name"
 
-    # Write session start and initial snapshot
-    "$CURRENT_DIR/writer.sh" init "$session_name"
+    # Capture initial snapshot for AI queue
     "$CURRENT_DIR/capture.sh" "session-start" "$session_name"
 
     # Start AI summarizer daemon if enabled
@@ -69,9 +68,6 @@ stop_recording() {
     if ! any_other_session_recording "$session_name"; then
         "$CURRENT_DIR/hooks.sh" unregister
     fi
-
-    # Write session end marker
-    "$CURRENT_DIR/writer.sh" close "$session_name"
 
     # Mark this session as not recording
     set_session_option "$session_name" "$MUXSCRIBE_OPT_RECORDING" "off"

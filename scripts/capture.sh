@@ -188,9 +188,6 @@ snapshot_session() {
         done <<< "$panes_data"
     } > "$event_file"
 
-    # Pass to writer
-    "$CURRENT_DIR/writer.sh" append "$session_name" "$event_file"
-
     # Append condensed event to AI queue if AI is enabled
     if is_ai_enabled; then
         build_event_queue_line "$event_type" "$session_name" "$event_file"
@@ -219,9 +216,8 @@ main() {
         return 0
     fi
 
-    # Handle session-closed: write close marker (session may be gone soon)
+    # Session-closed: nothing to do (AI summarizer handles its own cleanup)
     if [[ "$event_type" == "session-closed" ]]; then
-        "$CURRENT_DIR/writer.sh" close "$session_name"
         return 0
     fi
 
