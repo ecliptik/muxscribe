@@ -126,11 +126,20 @@ build_event_queue_line() {
     local queue_entry
     queue_entry=$(printf '[%s] %s | %s' "$timestamp" "$event_type" "$context")
 
-    # Append active pane content if captured
+    # Append active pane content only if it changed since last capture
     if [[ -n "$active_pane_content" ]]; then
-        queue_entry+=$'\n'"--- active pane content ---"
-        queue_entry+=$'\n'"$active_pane_content"
-        queue_entry+=$'\n'"--- end ---"
+        local content_hash
+        content_hash=$(printf '%s' "$active_pane_content" | cksum | cut -d' ' -f1)
+        local hash_file
+        hash_file="$(resolve_runtime_dir "$session_name")/last_content_hash"
+        local last_hash=""
+        [[ -f "$hash_file" ]] && last_hash=$(cat "$hash_file" 2>/dev/null)
+        if [[ "$content_hash" != "$last_hash" ]]; then
+            printf '%s' "$content_hash" > "$hash_file"
+            queue_entry+=$'\n'"--- active pane content ---"
+            queue_entry+=$'\n'"$active_pane_content"
+            queue_entry+=$'\n'"--- end ---"
+        fi
     fi
 
     # Use locked append
