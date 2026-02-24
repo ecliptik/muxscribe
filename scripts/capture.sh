@@ -66,6 +66,48 @@ collect_pane_metadata() {
         2>/dev/null
 }
 
+# Build a condensed one-line event description for the AI queue
+append_to_event_queue() {
+    local event_type="$1"
+    local session_name="$2"
+    local event_file="$3"
+    local queue_file
+    queue_file=$(resolve_event_queue)
+
+    local timestamp
+    timestamp=$(timestamp_time)
+
+    # Parse event file for a condensed summary
+    local summary_parts=()
+    local current_win_name=""
+    local pane_summaries=()
+
+    while IFS= read -r line; do
+        if [[ "$line" == WINDOW=* ]]; then
+            local win_data="${line#WINDOW=}"
+            local win_idx win_name win_active
+            IFS='|' read -r win_idx win_name win_active <<< "$win_data"
+            current_win_name="Window $win_idx: $win_name"
+        elif [[ "$line" == PANE_START=* ]]; then
+            local pane_data="${line#PANE_START=}"
+            local pane_id pane_idx pane_cmd pane_path pane_active
+            IFS='|' read -r pane_id pane_idx pane_cmd pane_path pane_active <<< "$pane_data"
+            local active_marker=""
+            [[ "$pane_active" == "1" ]] && active_marker=" (active)"
+            pane_summaries+=("$pane_cmd in $pane_path$active_marker")
+        fi
+    done < "$event_file"
+
+    local context="$current_win_name"
+    if (( ${#pane_summaries[@]} > 0 )); then
+        local pane_count=${#pane_summaries[@]}
+        context+=" | ${pane_count} pane(s): ${pane_summaries[0]}"
+    fi
+
+    # Append to queue (atomic-ish with >>)
+    printf '[%s] %s | %s\n' "$timestamp" "$event_type" "$context" >> "$queue_file"
+}
+
 # Snapshot all panes in a session and write to log
 snapshot_session() {
     local event_type="$1"
@@ -117,6 +159,11 @@ snapshot_session() {
 
     # Pass to writer
     "$CURRENT_DIR/writer.sh" append "$session_name" "$event_file"
+
+    # Append condensed event to AI queue if AI is enabled
+    if is_ai_enabled; then
+        append_to_event_queue "$event_type" "$session_name" "$event_file"
+    fi
 
     # Cleanup
     rm -f "$event_file"

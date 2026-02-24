@@ -97,3 +97,46 @@ is_recording() {
 get_session_name() {
     tmux display-message -p '#{session_name}'
 }
+
+# Resolve today's AI summary file path for a session
+resolve_summary_file() {
+    local session_name="$1"
+    local session_dir
+    session_dir=$(resolve_session_log_dir "$session_name")
+    printf '%s/summary-%s.md' "$session_dir" "$(date +%Y-%m-%d)"
+}
+
+# Resolve the event queue file for AI processing
+resolve_event_queue() {
+    local runtime_dir
+    runtime_dir=$(resolve_runtime_dir)
+    printf '%s/event-queue' "$runtime_dir"
+}
+
+# Resolve the AI session ID file (stores claude --resume session ID)
+resolve_ai_session_id_file() {
+    local runtime_dir
+    runtime_dir=$(resolve_runtime_dir)
+    printf '%s/ai-session-id' "$runtime_dir"
+}
+
+# Resolve the summarizer daemon PID file
+resolve_ai_pid_file() {
+    local runtime_dir
+    runtime_dir=$(resolve_runtime_dir)
+    printf '%s/summarizer.pid' "$runtime_dir"
+}
+
+# Resolve the summarizer lock file (prevents concurrent claude calls)
+resolve_ai_lock_file() {
+    local runtime_dir
+    runtime_dir=$(resolve_runtime_dir)
+    printf '%s/summarizer.lock' "$runtime_dir"
+}
+
+# Check if AI summarization is enabled
+is_ai_enabled() {
+    local state
+    state=$(get_tmux_option "$MUXSCRIBE_OPT_AI" "$MUXSCRIBE_DEFAULT_AI")
+    [[ "$state" == "on" ]]
+}

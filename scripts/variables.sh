@@ -10,6 +10,9 @@ MUXSCRIBE_OPT_STATUS_KEY="@muxscribe-status-key"
 MUXSCRIBE_OPT_LOG_DIR="@muxscribe-log-dir"
 MUXSCRIBE_OPT_RECORDING="@muxscribe-recording"
 MUXSCRIBE_OPT_DEBOUNCE="@muxscribe-debounce"
+MUXSCRIBE_OPT_AI="@muxscribe-ai"
+MUXSCRIBE_OPT_AI_MODEL="@muxscribe-ai-model"
+MUXSCRIBE_OPT_AI_INTERVAL="@muxscribe-ai-interval"
 
 # Defaults
 MUXSCRIBE_DEFAULT_KEY="M"
@@ -17,6 +20,9 @@ MUXSCRIBE_DEFAULT_STATUS_KEY="M-m"
 MUXSCRIBE_DEFAULT_LOG_DIR=""  # empty = use XDG
 MUXSCRIBE_DEFAULT_RECORDING="off"
 MUXSCRIBE_DEFAULT_DEBOUNCE="5"
+MUXSCRIBE_DEFAULT_AI="off"
+MUXSCRIBE_DEFAULT_AI_MODEL="sonnet"
+MUXSCRIBE_DEFAULT_AI_INTERVAL="10"
 
 # Hook array index — high number to avoid collisions with other plugins
 MUXSCRIBE_HOOK_INDEX=100

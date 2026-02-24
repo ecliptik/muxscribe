@@ -15,6 +15,7 @@ scripts/
   hooks.sh             — register/unregister tmux hooks
   capture.sh           — snapshot pane content on events
   writer.sh            — format events as markdown and write to log files
+  summarizer.sh        — AI summarizer daemon (polls event queue, feeds claude CLI)
 docs/
   ARCHITECTURE.md      — full architecture and sprint plan
   research/            — research documents on tmux, TPM, XDG
@@ -39,6 +40,10 @@ docs/
 - Check status: `bash scripts/toggle.sh status`
 - View hooks: `tmux show-hooks -g | grep '\[100\]'`
 - View log: `cat ~/.local/state/muxscribe/<session>/$(date +%Y-%m-%d).md`
+- View AI summary: `cat ~/.local/state/muxscribe/<session>/summary-$(date +%Y-%m-%d).md`
+- Start summarizer manually: `bash scripts/summarizer.sh start <session>`
+- Stop summarizer manually: `bash scripts/summarizer.sh stop <session>`
+- Flush pending events: `bash scripts/summarizer.sh flush <session>`
 
 ## Key design decisions
 
@@ -46,3 +51,6 @@ docs/
 - High-frequency events (`after-send-keys`, `after-select-pane`, `after-resize-pane`) are debounced with a configurable interval (default 5s)
 - Output is daily-rotated markdown files with YAML frontmatter for Obsidian compatibility
 - Manual toggle only — no auto-start (user presses `prefix + M`)
+- AI summarization uses a background daemon that polls an event queue and calls `claude` CLI with `--resume` for conversation continuity
+- `CLAUDECODE` env var must be unset before spawning `claude` CLI from within a Claude Code session
+- Event queue uses condensed one-line-per-event format to minimize token usage

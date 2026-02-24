@@ -11,11 +11,13 @@ A tmux plugin that records session activity and writes structured markdown devel
 - **XDG-compliant** — logs to `$XDG_STATE_HOME/muxscribe/` by default
 - **Manual toggle** — start/stop recording with a keybinding
 - **Debounced** — high-frequency events (keystrokes, pane switches) are coalesced
+- **AI summarization** — optional real-time log summarization via Claude CLI
 
 ## Requirements
 
 - tmux 3.2+ (tested on 3.5a)
 - [TPM](https://github.com/tmux-plugins/tpm) (Tmux Plugin Manager)
+- [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (optional, for AI summarization)
 
 ## Installation
 
@@ -64,6 +66,15 @@ set -g @muxscribe-log-dir '~/my-dev-logs'
 
 # Debounce interval in seconds for high-frequency events (default: 5)
 set -g @muxscribe-debounce '3'
+
+# Enable AI summarization (default: off, requires claude CLI)
+set -g @muxscribe-ai 'on'
+
+# Model for AI summarization (default: sonnet)
+set -g @muxscribe-ai-model 'haiku'
+
+# Batch interval in seconds for AI processing (default: 10)
+set -g @muxscribe-ai-interval '10'
 ```
 
 ## Output
@@ -95,6 +106,20 @@ Recording started
   2  src/lib.rs
 \```
 ```
+
+## AI Summarization
+
+When enabled, muxscribe runs a background daemon that feeds terminal events to Claude CLI in batches. Claude maintains a concise development log summary alongside the raw event logs.
+
+The summary file is written to `$XDG_STATE_HOME/muxscribe/<session>/summary-YYYY-MM-DD.md` and uses the same YAML frontmatter format for Obsidian compatibility.
+
+**How it works:**
+1. Each captured event appends a condensed one-line description to an event queue
+2. A background daemon polls the queue every N seconds (configurable)
+3. Batched events are sent to `claude` CLI with `--resume` to maintain conversation context
+4. Claude reads and updates the summary file after each batch
+
+**Requirements:** The `claude` CLI must be installed and authenticated. AI summarization is opt-in — set `@muxscribe-ai on` in your `.tmux.conf`.
 
 ## License
 

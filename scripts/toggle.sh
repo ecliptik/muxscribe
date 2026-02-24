@@ -31,12 +31,22 @@ start_recording() {
     "$CURRENT_DIR/writer.sh" init "$session_name"
     "$CURRENT_DIR/capture.sh" "session-start" "$session_name"
 
+    # Start AI summarizer daemon if enabled
+    if is_ai_enabled; then
+        "$CURRENT_DIR/summarizer.sh" start "$session_name"
+    fi
+
     display_message "recording started [$session_name]"
 }
 
 stop_recording() {
     local session_name
     session_name=$(get_session_name)
+
+    # Stop AI summarizer daemon if enabled
+    if is_ai_enabled; then
+        "$CURRENT_DIR/summarizer.sh" stop "$session_name"
+    fi
 
     # Unregister hooks
     "$CURRENT_DIR/hooks.sh" unregister
