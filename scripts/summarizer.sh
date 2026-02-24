@@ -211,38 +211,17 @@ _call_claude() {
     local summary_file="$3"
     local prompt="$4"
 
-    local resume_args=()
-    if [[ -f "$session_id_file" ]]; then
-        local sid
-        sid=$(cat "$session_id_file" 2>/dev/null)
-        if [[ -n "$sid" ]]; then
-            resume_args=(--resume "$sid")
-        fi
-    fi
-
     # Unset CLAUDECODE to allow spawning claude inside a Claude Code session
-    local output
-    output=$(
+    (
         unset CLAUDECODE
         claude -p \
-            "${resume_args[@]}" \
             --model "$model" \
-            --output-format json \
             --allowedTools "Read,Write" \
             --permission-mode bypassPermissions \
             --append-system-prompt "You are muxscribe, a development session logger. You will receive batches of tmux terminal events. Your job is to maintain a concise, readable development log summary at $summary_file. Write in markdown with YAML frontmatter (session, date, type: summary, tags: [muxscribe, dev-log, ai-summary]). Group related events. Focus on WHAT the developer is doing (editing files, running tests, debugging) not raw terminal output. Use ## headers for major activities with time ranges, bullet points for details. Be concise — this is a dev log, not a transcript. Always read the existing file first before writing updates." \
             "$prompt" \
-            2>/dev/null
+            >/dev/null 2>&1
     )
-
-    # Extract and save the session ID for --resume on subsequent calls
-    if [[ -n "$output" ]] && [[ -n "$session_id_file" ]]; then
-        local new_sid
-        new_sid=$(printf '%s' "$output" | grep -o '"session_id":"[^"]*"' | head -1 | cut -d'"' -f4)
-        if [[ -n "$new_sid" ]]; then
-            printf '%s' "$new_sid" > "$session_id_file"
-        fi
-    fi
 }
 
 main() {
