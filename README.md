@@ -121,6 +121,56 @@ The summary file is written to `$XDG_STATE_HOME/muxscribe/<session>/summary-YYYY
 
 **Requirements:** The `claude` CLI must be installed and authenticated. AI summarization is opt-in — set `@muxscribe-ai on` in your `.tmux.conf`.
 
+### Quickstart
+
+1. Install the [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) and authenticate:
+
+   ```bash
+   claude  # follow the login prompts
+   ```
+
+2. Enable AI summarization in `~/.tmux.conf`:
+
+   ```tmux
+   set -g @muxscribe-ai 'on'
+   ```
+
+3. Reload tmux config and start recording:
+
+   ```
+   prefix + I        # install/reload plugins
+   prefix + M        # start recording
+   ```
+
+4. Work in your terminal as usual. The summarizer daemon polls events every 10 seconds and streams updates to a summary file.
+
+5. View the live summary:
+
+   ```bash
+   # tail the summary as Claude updates it
+   tail -f ~/.local/state/muxscribe/<session>/summary-$(date +%Y-%m-%d).md
+   ```
+
+6. Stop recording when done:
+
+   ```
+   prefix + M        # stop recording (flushes remaining events to Claude)
+   ```
+
+You can tune the behavior with these options:
+
+```tmux
+set -g @muxscribe-ai-model 'haiku'    # faster/cheaper model (default: sonnet)
+set -g @muxscribe-ai-interval '30'    # poll less frequently (default: 10s)
+```
+
+To manually flush pending events or control the daemon:
+
+```bash
+bash scripts/summarizer.sh flush <session>   # process queued events now
+bash scripts/summarizer.sh stop <session>    # stop the daemon
+```
+
 ## License
 
 MIT
