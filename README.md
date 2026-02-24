@@ -80,14 +80,28 @@ set -g @muxscribe-ai-interval '10'
 
 ## Status Bar Indicator
 
-muxscribe sets the `@muxscribe-status` session option to `● REC` while recording. Add it to your status bar in `~/.tmux.conf`:
+muxscribe sets the `@muxscribe-recording` session option while recording. Add the indicator to your status bar in `~/.tmux.conf`:
+
+### Static indicator
+
+Use `#{@muxscribe-status}` for a simple non-animated indicator:
 
 ```tmux
-# Right status bar example
 set -g status-right '#{@muxscribe-status} | %H:%M'
 ```
 
-When recording is active the status bar shows `● REC`. When stopped, it's empty.
+Shows `● REC` when recording, empty when stopped.
+
+### Blinking indicator
+
+For a blinking effect (alternates between `●` and `○`), use the bundled `status.sh` script:
+
+```tmux
+set -g status-interval 2
+set -g status-right '#(~/.tmux/plugins/muxscribe/scripts/status.sh) | %H:%M'
+```
+
+This works in terminals that don't support ANSI blink (e.g. Ghostty). The `status-interval` controls the blink speed — 2 seconds gives a steady pulse.
 
 ## Output
 
