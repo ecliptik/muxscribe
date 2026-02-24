@@ -33,6 +33,8 @@ should_debounce() {
 
     local debounce_secs
     debounce_secs=$(get_tmux_option "$MUXSCRIBE_OPT_DEBOUNCE" "$MUXSCRIBE_DEFAULT_DEBOUNCE")
+    # Fall back to default if value is non-numeric
+    [[ "$debounce_secs" =~ ^[0-9]+$ ]] || debounce_secs="$MUXSCRIBE_DEFAULT_DEBOUNCE"
 
     if [[ -f "$DEBOUNCE_FILE" ]]; then
         local last_capture

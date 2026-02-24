@@ -214,6 +214,9 @@ _call_claude() {
     # Unset CLAUDECODE to allow spawning claude inside a Claude Code session
     (
         unset CLAUDECODE
+        # -p: print mode (non-interactive, reads prompt from args)
+        # --allowedTools: restrict to file read/write only
+        # --permission-mode bypassPermissions: skip interactive approval prompts
         claude -p \
             --model "$model" \
             --allowedTools "Read,Write" \

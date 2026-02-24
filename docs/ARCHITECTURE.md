@@ -186,9 +186,7 @@ All hooks use array index `[100]` to avoid conflicts with other plugins.
 | `after-send-keys[100]` | Activity | Yes |
 | `pane-exited` | Lifecycle | No |
 | `session-window-changed` | Navigation | No |
-| `window-pane-changed` | Navigation | No |
 | `session-closed` | Lifecycle | No |
-| `alert-activity` | Activity | No |
 
 Debounced events skip capture if less than N seconds (default 5, configurable via `@muxscribe-debounce`) have elapsed since the last snapshot for that event type.
 

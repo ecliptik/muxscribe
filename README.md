@@ -16,6 +16,7 @@ A tmux plugin that watches your terminal activity and produces AI-generated deve
 
 ## Requirements
 
+- Bash 3.1+ (uses `[[ ]]`, `(( ))`, `+=` syntax)
 - tmux 3.2+ (tested on 3.5a)
 - [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (must be installed and authenticated)
 - [TPM](https://github.com/tmux-plugins/tpm) (optional, for automatic installation)
