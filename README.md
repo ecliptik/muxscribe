@@ -17,8 +17,8 @@ A tmux plugin that watches your terminal activity and produces AI-generated deve
 ## Requirements
 
 - tmux 3.2+ (tested on 3.5a)
-- [TPM](https://github.com/tmux-plugins/tpm) (Tmux Plugin Manager)
 - [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (must be installed and authenticated)
+- [TPM](https://github.com/tmux-plugins/tpm) (optional, for automatic installation)
 
 ## Installation
 
@@ -27,7 +27,7 @@ A tmux plugin that watches your terminal activity and produces AI-generated deve
 Add to your `~/.tmux.conf`:
 
 ```tmux
-set -g @plugin 'yourusername/muxscribe'
+set -g @plugin 'ecliptik/muxscribe'
 set -g @muxscribe-ai 'on'
 ```
 
@@ -36,7 +36,7 @@ Then press `prefix + I` to install.
 ### Manual
 
 ```bash
-git clone https://github.com/yourusername/muxscribe ~/.tmux/plugins/muxscribe
+git clone https://forgejo.ecliptik.com/ecliptik/muxscribe.git ~/.tmux/plugins/muxscribe
 ```
 
 Add to your `~/.tmux.conf`:
