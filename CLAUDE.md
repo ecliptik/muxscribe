@@ -16,7 +16,6 @@ scripts/
   capture.sh           — snapshot pane content, build AI event queue entries
   summarizer.sh        — AI summarizer daemon (polls event queue, feeds claude CLI)
   status.sh            — blinking status bar indicator
-  writer.sh            — (legacy) markdown log writer, no longer called
 docs/
   ARCHITECTURE.md      — full architecture and sprint plan
   research/            — research documents on tmux, TPM, XDG
