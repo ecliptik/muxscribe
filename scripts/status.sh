@@ -4,7 +4,7 @@
 
 rec=$(tmux show-option -qv "@muxscribe-recording" 2>/dev/null)
 if [ "$rec" = "on" ]; then
-    if [ $(( $(date +%S) % 4 )) -lt 2 ]; then
+    if [ $(( 10#$(date +%S) % 4 )) -lt 2 ]; then
         printf '● REC'
     else
         printf '○ REC'
