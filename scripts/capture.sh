@@ -82,6 +82,9 @@ build_event_queue_line() {
     # Parse event file for a condensed summary
     local current_win_name=""
     local pane_summaries=()
+    local active_pane_id=""
+    local active_pane_content=""
+    local in_active_pane=0
 
     while IFS= read -r line; do
         if [[ "$line" == WINDOW=* ]]; then
@@ -94,8 +97,21 @@ build_event_queue_line() {
             local pane_id pane_idx pane_cmd pane_path pane_active
             IFS='|' read -r pane_id pane_idx pane_cmd pane_path pane_active <<< "$pane_data"
             local active_marker=""
-            [[ "$pane_active" == "1" ]] && active_marker=" (active)"
+            if [[ "$pane_active" == "1" ]]; then
+                active_marker=" (active)"
+                active_pane_id="$pane_id"
+                in_active_pane=1
+                active_pane_content=""
+            fi
             pane_summaries+=("$pane_cmd in $pane_path$active_marker")
+        elif [[ "$line" == PANE_END=* ]]; then
+            in_active_pane=0
+        elif (( in_active_pane )); then
+            if [[ -n "$active_pane_content" ]]; then
+                active_pane_content+=$'\n'"$line"
+            else
+                active_pane_content="$line"
+            fi
         fi
     done < "$event_file"
 
@@ -105,11 +121,18 @@ build_event_queue_line() {
         context+=" | ${pane_count} pane(s): ${pane_summaries[0]}"
     fi
 
-    local queue_line
-    queue_line=$(printf '[%s] %s | %s' "$timestamp" "$event_type" "$context")
+    local queue_entry
+    queue_entry=$(printf '[%s] %s | %s' "$timestamp" "$event_type" "$context")
+
+    # Append active pane content if captured
+    if [[ -n "$active_pane_content" ]]; then
+        queue_entry+=$'\n'"--- active pane content ---"
+        queue_entry+=$'\n'"$active_pane_content"
+        queue_entry+=$'\n'"--- end ---"
+    fi
 
     # Use locked append
-    append_to_event_queue_locked "$queue_file" "$queue_line"
+    append_to_event_queue_locked "$queue_file" "$queue_entry"
 }
 
 # Snapshot all panes in a session and write to log
