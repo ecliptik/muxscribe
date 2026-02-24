@@ -2,14 +2,14 @@
 
 ## Overview
 
-muxscribe is a pure-Bash tmux plugin that records session activity and writes structured markdown logs. It captures tmux events via hooks, snapshots pane content via `capture-pane`, and writes daily-rotated markdown files organized by session — designed for Obsidian import and later AI summarization.
+muxscribe is a pure-Bash tmux plugin that watches terminal activity and produces AI-generated session summaries via Claude CLI. It captures tmux events via hooks, snapshots the active pane's visible content, and feeds batches to a Claude-powered background daemon that maintains a live-updating summary file.
 
 ## Design Principles
 
-1. **Zero dependencies** — pure Bash + tmux commands only
+1. **Zero dependencies** — pure Bash + tmux commands + Claude CLI
 2. **Event-driven** — every tmux hook triggers a snapshot
 3. **Non-intrusive** — must not slow tmux; all capture work happens in background
-4. **Structured output** — markdown with YAML frontmatter, Obsidian-compatible
+4. **AI-first** — only output is Claude-generated summaries, no raw logs
 5. **XDG-compliant** — follows XDG Base Directory Specification
 
 ## Component Architecture
@@ -43,21 +43,28 @@ muxscribe is a pure-Bash tmux plugin that records session activity and writes st
         │             │
         │             ▼
         │      ┌──────────────┐
-        │      │  capture.sh  │  ← snapshot all panes
+        │      │  capture.sh  │  ← snapshot active pane
         │      └──────┬───────┘
         │             │
         │             ▼
-        │      ┌──────────────┐
-        └─────▶│  writer.sh   │  ← format & write markdown
-               └──────┬───────┘
-                      │
-                      ▼
-           ┌─────────────────────┐
-           │ $XDG_STATE_HOME/    │
-           │   muxscribe/        │
-           │     <session>/      │
-           │       YYYY-MM-DD.md │
-           └─────────────────────┘
+        │      ┌──────────────┐     ┌──────────────────────┐
+        │      │  event queue │────▶│  summarizer.sh       │
+        │      │  (runtime)   │     │  (background daemon)  │
+        └─────▶└──────────────┘     └──────────┬───────────┘
+                                               │
+                                               ▼
+                                        ┌─────────────┐
+                                        │  claude CLI  │
+                                        │  (--resume)  │
+                                        └──────┬──────┘
+                                               │
+                                               ▼
+                                  ┌─────────────────────┐
+                                  │ $XDG_STATE_HOME/    │
+                                  │   muxscribe/        │
+                                  │     <session>/      │
+                                  │  summary-YYYY-MM-DD │
+                                  └─────────────────────┘
 ```
 
 ## File Structure
@@ -70,8 +77,9 @@ muxscribe/
 │   ├── variables.sh            # Option names, defaults, constants
 │   ├── toggle.sh               # Start/stop recording (keybinding handler)
 │   ├── hooks.sh                # Register/unregister all tmux hooks
-│   ├── capture.sh              # Snapshot pane content for all panes
-│   └── writer.sh               # Format events and write markdown
+│   ├── capture.sh              # Snapshot active pane, build event queue entries
+│   ├── summarizer.sh           # AI daemon (polls queue, feeds claude CLI)
+│   └── status.sh               # Blinking status bar indicator
 ├── docs/
 │   ├── ARCHITECTURE.md         # This file
 │   └── research/               # Research documents
@@ -84,72 +92,105 @@ muxscribe/
 ### 1. Activation (User presses `prefix + M`)
 
 ```
-toggle.sh
-  ├── Check if already recording (via @muxscribe-recording option)
-  ├── If not recording:
-  │   ├── Set @muxscribe-recording "on"
-  │   ├── Call hooks.sh register
-  │   ├── Call writer.sh init (create session dir, write frontmatter)
-  │   ├── Call capture.sh snapshot (initial state)
-  │   └── Display "muxscribe: recording started"
-  └── If recording:
-      ├── Set @muxscribe-recording "off"
-      ├── Call hooks.sh unregister
-      ├── Call writer.sh close (write session end marker)
-      └── Display "muxscribe: recording stopped"
+toggle.sh start
+  ├── Set @muxscribe-recording "on"
+  ├── Set @muxscribe-status "● REC"
+  ├── Call hooks.sh register
+  ├── Call capture.sh "session-start" (initial snapshot → event queue)
+  ├── Start summarizer.sh daemon (if @muxscribe-ai is on)
+  └── Display "recording started"
 ```
 
-### 2. Event Capture (Hook fires)
+### 2. Deactivation (User presses `prefix + M` again)
 
 ```
-tmux hook fires → run-shell "capture.sh <event_type> <context...>"
-  ├── Collect metadata (timestamp, session, window, pane, event type)
-  ├── For each pane in session:
-  │   └── tmux capture-pane -p -J -t <pane_id>
-  ├── Call writer.sh append <event_type> <metadata> <pane_content>
-  └── Exit
+toggle.sh stop
+  ├── Stop summarizer.sh daemon (flushes remaining events to Claude)
+  ├── Call hooks.sh unregister
+  ├── Set @muxscribe-recording "off"
+  ├── Clear @muxscribe-status
+  └── Display "recording stopped"
 ```
 
-### 3. Markdown Output
+### 3. Event Capture (Hook fires)
 
 ```
-writer.sh append
-  ├── Resolve log file path (XDG_STATE_HOME/muxscribe/<session>/YYYY-MM-DD.md)
-  ├── If new day → create new file with frontmatter
-  ├── Format entry:
-  │   ├── Timestamp header
-  │   ├── Event type + context
-  │   └── Pane content in code blocks (only changed panes)
-  └── Append to file
+tmux hook fires → run-shell "capture.sh <event_type> <session>"
+  ├── Check debounce (skip if < N seconds since last capture for this event type)
+  ├── Collect window/pane metadata for all panes in session
+  ├── Capture visible content of each pane via tmux capture-pane -p -J
+  ├── Build event queue entry:
+  │   ├── Metadata line: [HH:MM:SS] event_type | Window X: name | Y pane(s): cmd in path
+  │   ├── Active pane content (from active window + active pane):
+  │   │   ├── --- active pane content ---
+  │   │   ├── <visible terminal lines>
+  │   │   └── --- end ---
+  │   └── Append to event queue (locked)
+  └── Cleanup temp event file
 ```
+
+### 4. AI Summarization (Daemon loop)
+
+```
+summarizer.sh daemon
+  ├── Send initial context prompt to claude (receives session ID for --resume)
+  └── Loop every N seconds:
+      ├── Acquire exclusive lock on queue file
+      ├── Read all queued events atomically
+      ├── Clear queue
+      ├── Send batch to claude --resume with: "New events:\n<batch>\nUpdate summary file"
+      └── Claude reads existing summary, writes updated version
+```
+
+## Event Queue Format
+
+Events are stored in `$XDG_RUNTIME_DIR/muxscribe/<session>/event-queue`, one entry per event:
+
+```
+[17:31:13] after-select-window | Window 3: claude | 4 pane(s): zsh in /home/user
+--- active pane content ---
+$ git status
+On branch main
+Changes not staged for commit:
+  modified:   src/main.rs
+--- end ---
+[17:31:45] after-send-keys | Window 3: claude | 4 pane(s): zsh in /home/user
+--- active pane content ---
+$ cargo test
+running 3 tests
+test test_parse ... ok
+test test_format ... ok
+test test_output ... ok
+--- end ---
+```
+
+The active pane is identified by both `pane_active == 1` AND `win_active == 1` (the active pane of the active window only).
 
 ## Hook Registration
 
 All hooks use array index `[100]` to avoid conflicts with other plugins.
 
-### Registered Hooks
+| Hook | Category | Debounced |
+|------|----------|-----------|
+| `after-new-window[100]` | Structure | No |
+| `after-split-window[100]` | Structure | No |
+| `after-kill-pane[100]` | Structure | No |
+| `after-rename-window[100]` | Context | No |
+| `after-rename-session[100]` | Context | No |
+| `after-select-window[100]` | Navigation | No |
+| `after-select-pane[100]` | Navigation | Yes |
+| `after-resize-pane[100]` | Layout | Yes |
+| `after-resize-window[100]` | Layout | No |
+| `after-select-layout[100]` | Layout | No |
+| `after-copy-mode[100]` | Activity | No |
+| `after-send-keys[100]` | Activity | Yes |
+| `pane-exited` | Lifecycle | No |
+| `session-window-changed` | Navigation | No |
+| `window-pane-changed` | Navigation | No |
+| `session-closed` | Lifecycle | No |
+| `alert-activity` | Activity | No |
 
-| Hook | Category | What We Log |
-|------|----------|-------------|
-| `after-new-window[100]` | Structure | Window created |
-| `after-split-window[100]` | Structure | Pane split |
-| `after-kill-pane[100]` | Structure | Pane closed |
-| `after-rename-window[100]` | Context | Window renamed |
-| `after-rename-session[100]` | Context | Session renamed |
-| `after-select-window[100]` | Navigation | Window switched |
-| `after-select-pane[100]` | Navigation | Pane switched |
-| `after-resize-pane[100]` | Layout | Pane resized |
-| `after-resize-window[100]` | Layout | Window resized |
-| `after-select-layout[100]` | Layout | Layout changed |
-| `after-copy-mode[100]` | Activity | Copy mode entered/exited |
-| `after-send-keys[100]` | Activity | Keys sent (debounced) |
-| `pane-exited` | Lifecycle | Pane command exited |
-| `session-window-changed` | Navigation | Active window changed |
-| `window-pane-changed` | Navigation | Active pane changed |
-| `session-closed` | Lifecycle | Session ending |
-| `alert-activity` | Activity | Activity in monitored window |
-
-**Note on `after-send-keys`**: This fires on every keystroke. We handle this by recording only the fact that keys were sent, not capturing on every keystroke. The capture.sh script implements timestamp-based debouncing — it skips snapshots for `after-send-keys` events if less than 5 seconds have elapsed since the last snapshot.
+Debounced events skip capture if less than N seconds (default 5, configurable via `@muxscribe-debounce`) have elapsed since the last snapshot for that event type.
 
 ## Configuration Options
 
@@ -157,130 +198,54 @@ All hooks use array index `[100]` to avoid conflicts with other plugins.
 |--------|---------|-------------|
 | `@muxscribe-key` | `M` | Toggle key (prefix + key) |
 | `@muxscribe-status-key` | `M-m` | Status key (prefix + key) |
-| `@muxscribe-log-dir` | (XDG_STATE_HOME) | Override log directory |
-| `@muxscribe-recording` | `off` | Internal: current recording state |
+| `@muxscribe-log-dir` | (XDG_STATE_HOME) | Override output directory |
 | `@muxscribe-debounce` | `5` | Seconds to debounce high-frequency events |
+| `@muxscribe-ai` | `off` | Enable AI summarization |
+| `@muxscribe-ai-model` | `sonnet` | Claude model for summarization |
+| `@muxscribe-ai-interval` | `10` | Seconds between daemon poll cycles |
+| `@muxscribe-recording` | `off` | Internal: current recording state |
+| `@muxscribe-status` | (empty) | Internal: status bar indicator text |
 
-## Markdown Output Format
+## Output
 
-### File Path
+### Summary File
 
 ```
-$XDG_STATE_HOME/muxscribe/<session-name>/YYYY-MM-DD.md
+$XDG_STATE_HOME/muxscribe/<session>/summary-YYYY-MM-DD.md
 ```
 
-### File Structure
+Daily-rotated, YAML frontmatter, maintained by Claude:
 
 ```markdown
 ---
-session: my-project
+session: "0"
 date: 2026-02-23
-started: "2026-02-23T10:30:00"
-host: hostname
-tags: [muxscribe, dev-log]
+type: summary
+tags: [muxscribe, dev-log, ai-summary]
 ---
 
-# Session: my-project — 2026-02-23
+## 10:30–11:15 — Debugging Authentication Bug
 
-## 10:30:00 — session-start
+- Investigated failing login flow in `src/auth.rs`
+- Root cause: token expiry check off by one hour (timezone)
+- Applied fix, added regression test
+- All tests passing
 
-Recording started. 2 windows, 3 panes.
+## 11:15–11:45 — Code Review and PR
 
-### Window 0: editor (2 panes)
-
-**Pane 0** — `nvim` in `/home/user/project`
-```text
-  1  src/main.rs
-  2  src/lib.rs
-~ ...
-`` `
-
-**Pane 1** — `bash` in `/home/user/project`
-```text
-$ cargo build
-   Compiling project v0.1.0
-`` `
-
----
-
-## 10:32:15 — after-new-window
-
-New window created: `terminal`
-
-### Window 1: terminal (1 pane)
-
-**Pane 0** — `bash` in `/home/user/project`
-```text
-$
-`` `
-
----
-
-## 10:35:42 — after-select-window
-
-Switched to window 0: `editor`
-
-### Window 0: editor — active pane 0
-
-**Pane 0** — `nvim` in `/home/user/project`
-```text
-fn main() {
-    println!("Hello, world!");
-}
-`` `
+- Reviewed PR #42 feedback
+- Addressed nit about error message wording
+- Pushed updated branch
 ```
 
-### Design Choices for Output
+### Runtime Files
 
-1. **Timestamp as H2** — easy to scan, collapsible in Obsidian
-2. **Event type in header** — machine-parseable for AI summarization
-3. **Only capture active window's panes by default** — reduces noise while keeping context
-4. **Code blocks for terminal content** — renders cleanly in markdown
-5. **YAML frontmatter** — Obsidian metadata compatibility
-6. **Horizontal rules between entries** — visual separation
-
-## Sprint Plan
-
-### Sprint 1: Core Plugin Skeleton (Foundation)
-
-**Deliverables:**
-- `muxscribe.tmux` — TPM entry point
-- `scripts/helpers.sh` — `get_tmux_option`, `set_tmux_option`, `display_message`
-- `scripts/variables.sh` — all option names, defaults, constants
-- `scripts/toggle.sh` — start/stop recording with status display
-- XDG path resolution
-- Toggle keybinding (`prefix + M`)
-- Status display keybinding (`prefix + Alt-m`)
-- Initial README.md
-
-### Sprint 2: Hook Registration & Event Capture (Engine)
-
-**Deliverables:**
-- `scripts/hooks.sh` — register/unregister all hooks
-- `scripts/capture.sh` — snapshot pane content
-- Hook → capture.sh dispatch pipeline
-- Debouncing for high-frequency events (`after-send-keys`)
-- All-panes iteration and content capture
-- Event metadata collection
-
-### Sprint 3: Markdown Log Writer (Output)
-
-**Deliverables:**
-- `scripts/writer.sh` — format and write markdown
-- Session directory creation
-- Daily file rotation with YAML frontmatter
-- Event formatting (timestamp, type, context)
-- Pane content formatting (code blocks)
-- Diff-awareness: only log panes whose content changed
-- Session start/stop markers
-
-### Sprint 4: Integration Testing & Polish
-
-**Deliverables:**
-- End-to-end testing with live tmux session
-- Edge cases: session rename, window close, pane respawn, detach/reattach
-- Performance verification
-- Cleanup on session destroy
-- Complete README with install/usage/config docs
-- LICENSE (MIT)
-- CLAUDE.md project conventions
+```
+$XDG_RUNTIME_DIR/muxscribe/<session>/
+├── event-queue              — Pending events for summarizer
+├── ai-session-id            — Claude --resume session ID
+├── summarizer.pid           — Daemon PID
+├── summarizer.lock          — Exclusive lock for batch processing
+├── last_capture_<event>     — Debounce timestamps
+└── event_XXXXXX             — Temporary event files (cleaned up)
+```
