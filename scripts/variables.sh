@@ -13,6 +13,7 @@ MUXSCRIBE_OPT_DEBOUNCE="@muxscribe-debounce"
 MUXSCRIBE_OPT_AI="@muxscribe-ai"
 MUXSCRIBE_OPT_AI_MODEL="@muxscribe-ai-model"
 MUXSCRIBE_OPT_AI_INTERVAL="@muxscribe-ai-interval"
+MUXSCRIBE_OPT_STATUS="@muxscribe-status"
 
 # Defaults
 MUXSCRIBE_DEFAULT_KEY="M"

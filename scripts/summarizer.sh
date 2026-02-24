@@ -12,7 +12,7 @@ start_daemon() {
     local session_name="$1"
 
     local pid_file
-    pid_file=$(resolve_ai_pid_file)
+    pid_file=$(resolve_ai_pid_file "$session_name")
 
     # Check if already running
     if [[ -f "$pid_file" ]]; then
@@ -25,13 +25,13 @@ start_daemon() {
         rm -f "$pid_file"
     fi
 
-    # Resolve paths
+    # Resolve paths (per-session)
     local queue_file
-    queue_file=$(resolve_event_queue)
+    queue_file=$(resolve_event_queue "$session_name")
     local session_id_file
-    session_id_file=$(resolve_ai_session_id_file)
+    session_id_file=$(resolve_ai_session_id_file "$session_name")
     local lock_file
-    lock_file=$(resolve_ai_lock_file)
+    lock_file=$(resolve_ai_lock_file "$session_name")
     local summary_file
     summary_file=$(resolve_summary_file "$session_name")
     local session_dir
@@ -69,13 +69,13 @@ stop_daemon() {
     local session_name="$1"
 
     local pid_file
-    pid_file=$(resolve_ai_pid_file)
+    pid_file=$(resolve_ai_pid_file "$session_name")
     local session_id_file
-    session_id_file=$(resolve_ai_session_id_file)
+    session_id_file=$(resolve_ai_session_id_file "$session_name")
     local queue_file
-    queue_file=$(resolve_event_queue)
+    queue_file=$(resolve_event_queue "$session_name")
     local lock_file
-    lock_file=$(resolve_ai_lock_file)
+    lock_file=$(resolve_ai_lock_file "$session_name")
     local summary_file
     summary_file=$(resolve_summary_file "$session_name")
 
@@ -125,11 +125,11 @@ flush_queue() {
     local session_name="$1"
 
     local queue_file
-    queue_file=$(resolve_event_queue)
+    queue_file=$(resolve_event_queue "$session_name")
     local session_id_file
-    session_id_file=$(resolve_ai_session_id_file)
+    session_id_file=$(resolve_ai_session_id_file "$session_name")
     local lock_file
-    lock_file=$(resolve_ai_lock_file)
+    lock_file=$(resolve_ai_lock_file "$session_name")
     local summary_file
     summary_file=$(resolve_summary_file "$session_name")
     local model
@@ -164,8 +164,8 @@ _run_daemon() {
     while true; do
         sleep "$interval"
 
-        # Check if we should still be running
-        if ! is_recording 2>/dev/null; then
+        # Check if this session should still be running
+        if ! is_session_recording "$session_name" 2>/dev/null; then
             break
         fi
 

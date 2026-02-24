@@ -159,7 +159,7 @@ $description
             pane_content=""
         elif [[ "$line" == PANE_END=* ]]; then
             # Trim trailing blank lines from pane content
-            pane_content=$(printf '%s' "$pane_content" | sed -e :a -e '/^[[:space:]]*$/d;N;ba' 2>/dev/null || printf '%s' "$pane_content")
+            pane_content=$(printf '%s' "$pane_content" | awk 'NF{p=1} p' 2>/dev/null || printf '%s' "$pane_content")
 
             local active_marker=""
             [[ "$current_pane_active" == "1" ]] && active_marker=" *"

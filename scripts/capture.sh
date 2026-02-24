@@ -6,14 +6,16 @@ CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$CURRENT_DIR/variables.sh"
 source "$CURRENT_DIR/helpers.sh"
 
-# Debounce file — stores epoch of last capture
-DEBOUNCE_FILE=""
-
+# Initialize debounce file keyed by session and event type
 init_debounce() {
+    local session_name="$1"
+    local event_type="$2"
     local runtime_dir
-    runtime_dir=$(resolve_runtime_dir)
+    runtime_dir=$(resolve_runtime_dir "$session_name")
     ensure_dir "$runtime_dir"
-    DEBOUNCE_FILE="$runtime_dir/last_capture"
+    local safe_event
+    safe_event=$(printf '%s' "$event_type" | tr '-' '_')
+    DEBOUNCE_FILE="$runtime_dir/last_capture_${safe_event}"
 }
 
 # Check if we should skip this event due to debouncing
@@ -67,18 +69,17 @@ collect_pane_metadata() {
 }
 
 # Build a condensed one-line event description for the AI queue
-append_to_event_queue() {
+build_event_queue_line() {
     local event_type="$1"
     local session_name="$2"
     local event_file="$3"
     local queue_file
-    queue_file=$(resolve_event_queue)
+    queue_file=$(resolve_event_queue "$session_name")
 
     local timestamp
     timestamp=$(timestamp_time)
 
     # Parse event file for a condensed summary
-    local summary_parts=()
     local current_win_name=""
     local pane_summaries=()
 
@@ -104,8 +105,11 @@ append_to_event_queue() {
         context+=" | ${pane_count} pane(s): ${pane_summaries[0]}"
     fi
 
-    # Append to queue (atomic-ish with >>)
-    printf '[%s] %s | %s\n' "$timestamp" "$event_type" "$context" >> "$queue_file"
+    local queue_line
+    queue_line=$(printf '[%s] %s | %s' "$timestamp" "$event_type" "$context")
+
+    # Use locked append
+    append_to_event_queue_locked "$queue_file" "$queue_line"
 }
 
 # Snapshot all panes in a session and write to log
@@ -131,8 +135,10 @@ snapshot_session() {
 
     # Create a temp file for the event data
     local runtime_dir
-    runtime_dir=$(resolve_runtime_dir)
-    local event_file="$runtime_dir/event_$$"
+    runtime_dir=$(resolve_runtime_dir "$session_name")
+    ensure_dir "$runtime_dir"
+    local event_file
+    event_file=$(mktemp "$runtime_dir/event_XXXXXX")
 
     {
         echo "EVENT_TYPE=$event_type"
@@ -162,7 +168,7 @@ snapshot_session() {
 
     # Append condensed event to AI queue if AI is enabled
     if is_ai_enabled; then
-        append_to_event_queue "$event_type" "$session_name" "$event_file"
+        build_event_queue_line "$event_type" "$session_name" "$event_file"
     fi
 
     # Cleanup
@@ -178,13 +184,13 @@ main() {
         session_name=$(get_session_name 2>/dev/null || echo "")
     fi
 
-    # Skip if not recording
-    if ! is_recording; then
+    # Skip if session name is empty (session might have closed)
+    if [[ -z "$session_name" ]]; then
         return 0
     fi
 
-    # Skip if session name is empty (session might have closed)
-    if [[ -z "$session_name" ]]; then
+    # Skip if this session is not recording
+    if ! is_session_recording "$session_name"; then
         return 0
     fi
 
@@ -194,8 +200,8 @@ main() {
         return 0
     fi
 
-    # Initialize debounce
-    init_debounce
+    # Initialize debounce (keyed by session + event type)
+    init_debounce "$session_name" "$event_type"
 
     # Check debounce
     if should_debounce "$event_type"; then
