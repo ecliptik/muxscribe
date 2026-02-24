@@ -46,7 +46,7 @@ Then press `prefix + I` to install.
 ### Manual
 
 ```bash
-git clone https://forgejo.ecliptik.com/ecliptik/muxscribe.git ~/.tmux/plugins/muxscribe
+git clone https://github.com/ecliptik/muxscribe.git ~/.tmux/plugins/muxscribe
 ```
 
 Add to your `~/.tmux.conf`:
