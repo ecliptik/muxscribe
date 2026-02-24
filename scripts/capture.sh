@@ -81,6 +81,7 @@ build_event_queue_line() {
 
     # Parse event file for a condensed summary
     local current_win_name=""
+    local current_win_active=0
     local pane_summaries=()
     local active_pane_id=""
     local active_pane_content=""
@@ -92,12 +93,13 @@ build_event_queue_line() {
             local win_idx win_name win_active
             IFS='|' read -r win_idx win_name win_active <<< "$win_data"
             current_win_name="Window $win_idx: $win_name"
+            current_win_active="$win_active"
         elif [[ "$line" == PANE_START=* ]]; then
             local pane_data="${line#PANE_START=}"
             local pane_id pane_idx pane_cmd pane_path pane_active
             IFS='|' read -r pane_id pane_idx pane_cmd pane_path pane_active <<< "$pane_data"
             local active_marker=""
-            if [[ "$pane_active" == "1" ]]; then
+            if [[ "$pane_active" == "1" && "$current_win_active" == "1" ]]; then
                 active_marker=" (active)"
                 active_pane_id="$pane_id"
                 in_active_pane=1
