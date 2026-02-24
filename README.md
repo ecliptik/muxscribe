@@ -21,6 +21,15 @@ A tmux plugin that watches your terminal activity and produces AI-generated deve
 - [Claude CLI](https://docs.anthropic.com/en/docs/claude-code) (must be installed and authenticated)
 - [TPM](https://github.com/tmux-plugins/tpm) (optional, for automatic installation)
 
+## Privacy & Security
+
+muxscribe captures **visible terminal content** from your active pane and sends it to Anthropic's API for summarization. Be aware of the following:
+
+- **Terminal content is sent to a third-party API** — anything visible in your active pane when an event fires may be included in API requests
+- **Sensitive commands are excluded by default** — panes running `ssh`, `pass`, `gpg`, `sudo`, `su`, `doas`, `openssl`, `vault`, or `ansible-vault` have their content replaced with `[content excluded: <command>]` (configurable via `@muxscribe-exclude-commands`)
+- **Files are stored with owner-only permissions** — directories are created mode 700, summary files mode 600
+- **Avoid using muxscribe when working with secrets** unless you have configured appropriate exclusions
+
 ## Installation
 
 ### With TPM
@@ -114,6 +123,9 @@ set -g @muxscribe-ai-model 'haiku'
 
 # Batch interval in seconds for AI processing (default: 10)
 set -g @muxscribe-ai-interval '10'
+
+# Comma-separated commands to exclude from capture (default: ssh,pass,gpg,sudo,su,doas,openssl,vault,ansible-vault)
+set -g @muxscribe-exclude-commands 'ssh,pass,gpg,sudo'
 ```
 
 ## Status Bar Indicator

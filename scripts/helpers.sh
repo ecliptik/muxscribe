@@ -107,7 +107,7 @@ resolve_runtime_dir() {
 
 # Ensure a directory exists
 ensure_dir() {
-    [[ -d "$1" ]] || mkdir -p "$1"
+    [[ -d "$1" ]] || mkdir -p -m 700 "$1"
 }
 
 # Get the current timestamp in ISO 8601 format

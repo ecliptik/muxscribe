@@ -33,7 +33,6 @@ start_recording() {
     local runtime_dir
     runtime_dir=$(resolve_runtime_dir "$session_name")
     ensure_dir "$runtime_dir"
-    chmod 700 "$runtime_dir" 2>/dev/null
 
     # Mark this session as recording (session-level option)
     set_session_option "$session_name" "$MUXSCRIBE_OPT_RECORDING" "on"

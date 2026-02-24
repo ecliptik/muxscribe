@@ -62,6 +62,23 @@ capture_pane_content() {
     tmux capture-pane -p -J -t "$pane_id" 2>/dev/null
 }
 
+# Check if a pane's current command is in the exclusion list
+should_exclude_pane() {
+    local pane_cmd="$1"
+    local exclude_list
+    exclude_list=$(get_tmux_option "$MUXSCRIBE_OPT_EXCLUDE_COMMANDS" "$MUXSCRIBE_DEFAULT_EXCLUDE_COMMANDS")
+    [[ -z "$exclude_list" ]] && return 1
+
+    local IFS=','
+    for excluded in $exclude_list; do
+        # Trim whitespace
+        excluded="${excluded## }"
+        excluded="${excluded%% }"
+        [[ "$pane_cmd" == "$excluded" ]] && return 0
+    done
+    return 1
+}
+
 # Collect metadata for a single pane
 collect_pane_metadata() {
     local pane_id="$1"
@@ -192,8 +209,12 @@ snapshot_session() {
 
             echo "PANE_START=$pane_id|$pane_idx|$pane_cmd|$pane_path|$pane_active"
 
-            # Capture pane content (visible area only)
-            capture_pane_content "$pane_id"
+            # Capture pane content (visible area only), or exclude if sensitive
+            if should_exclude_pane "$pane_cmd"; then
+                echo "[content excluded: $pane_cmd]"
+            else
+                capture_pane_content "$pane_id"
+            fi
 
             echo "PANE_END=$pane_id"
         done <<< "$panes_data"
@@ -222,13 +243,27 @@ main() {
         return 0
     fi
 
-    # Skip if this session is not recording
-    if ! is_session_recording "$session_name"; then
+    # Session-closed: clean up before the session option disappears
+    if [[ "$event_type" == "session-closed" ]]; then
+        # Kill summarizer daemon if running
+        local pid_file
+        pid_file=$(resolve_ai_pid_file "$session_name")
+        if [[ -f "$pid_file" ]]; then
+            local pid
+            pid=$(cat "$pid_file" 2>/dev/null)
+            if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" 2>/dev/null
+            fi
+        fi
+        # Remove session runtime directory
+        local runtime_dir
+        runtime_dir=$(resolve_runtime_dir "$session_name")
+        [[ -d "$runtime_dir" ]] && rm -rf "$runtime_dir"
         return 0
     fi
 
-    # Session-closed: nothing to do (AI summarizer handles its own cleanup)
-    if [[ "$event_type" == "session-closed" ]]; then
+    # Skip if this session is not recording
+    if ! is_session_recording "$session_name"; then
         return 0
     fi
 

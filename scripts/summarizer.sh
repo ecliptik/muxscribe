@@ -106,7 +106,7 @@ stop_daemon() {
         : > "$queue_file"
 
         _call_claude "$session_id_file" "$model" "$summary_file" \
-            "Final events before recording stopped:\n$batch_content\n\nUpdate $summary_file with a final summary. Add a closing note that recording has ended."
+            "Final events before recording stopped:\n$batch_content\n\nUpdate $(basename "$summary_file") with a final summary. Add a closing note that recording has ended."
     fi
 
     # Cleanup
@@ -147,9 +147,12 @@ _run_daemon() {
     local lock_file="$6"
     local summary_file="$7"
 
+    # Restrict file creation to owner-only permissions
+    umask 077
+
     # Send initial prompt to establish context (no --resume on first call)
     _call_claude "$session_id_file" "$model" "$summary_file" \
-        "Recording started for tmux session '$session_name'. I'll send you batches of terminal events. After each batch, update the summary file at $summary_file."
+        "Recording started for tmux session '$session_name'. I'll send you batches of terminal events. After each batch, update the summary file at $(basename "$summary_file")."
 
     # Poll loop
     while true; do
@@ -201,7 +204,7 @@ _process_batch() {
     fi
 
     _call_claude "$session_id_file" "$model" "$summary_file" \
-        "New events:\n$batch_content\n\nUpdate $summary_file with a summary of these events."
+        "New events:\n$batch_content\n\nUpdate $(basename "$summary_file") with a summary of these events."
 }
 
 # Internal: invoke claude CLI with proper environment
@@ -211,9 +214,16 @@ _call_claude() {
     local summary_file="$3"
     local prompt="$4"
 
+    local summary_basename
+    summary_basename=$(basename "$summary_file")
+    local summary_dir
+    summary_dir=$(dirname "$summary_file")
+
     # Unset CLAUDECODE to allow spawning claude inside a Claude Code session
+    # cd into the session log dir so Claude's file access is scoped there
     (
         unset CLAUDECODE
+        cd "$summary_dir" || exit 1
         # -p: print mode (non-interactive, reads prompt from args)
         # --allowedTools: restrict to file read/write only
         # --permission-mode bypassPermissions: skip interactive approval prompts
@@ -221,10 +231,13 @@ _call_claude() {
             --model "$model" \
             --allowedTools "Read,Write" \
             --permission-mode bypassPermissions \
-            --append-system-prompt "You are muxscribe, a development session logger. You will receive batches of tmux terminal events. Your job is to maintain a concise, readable development log summary at $summary_file. Write in markdown with YAML frontmatter (session, date, type: summary, tags: [muxscribe, dev-log, ai-summary]). Group related events. Focus on WHAT the developer is doing (editing files, running tests, debugging) not raw terminal output. Use ## headers for major activities with time ranges, bullet points for details. Be concise — this is a dev log, not a transcript. Always read the existing file first before writing updates." \
+            --append-system-prompt "You are muxscribe, a development session logger. You will receive batches of tmux terminal events. Your job is to maintain a concise, readable development log summary at $summary_basename. Write in markdown with YAML frontmatter (session, date, type: summary, tags: [muxscribe, dev-log, ai-summary]). Group related events. Focus on WHAT the developer is doing (editing files, running tests, debugging) not raw terminal output. Use ## headers for major activities with time ranges, bullet points for details. Be concise — this is a dev log, not a transcript. Always read the existing file first before writing updates." \
             "$prompt" \
             >/dev/null 2>&1
     )
+
+    # Ensure summary file has restricted permissions
+    [[ -f "$summary_file" ]] && chmod 600 "$summary_file"
 }
 
 main() {
