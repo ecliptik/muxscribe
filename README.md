@@ -11,6 +11,7 @@ A tmux plugin that records session activity and writes structured markdown devel
 - **XDG-compliant** — logs to `$XDG_STATE_HOME/muxscribe/` by default
 - **Manual toggle** — start/stop recording with a keybinding
 - **Debounced** — high-frequency events (keystrokes, pane switches) are coalesced
+- **Status bar indicator** — shows `● REC` in your tmux status bar when recording
 - **AI summarization** — optional real-time log summarization via Claude CLI
 
 ## Requirements
@@ -76,6 +77,17 @@ set -g @muxscribe-ai-model 'haiku'
 # Batch interval in seconds for AI processing (default: 10)
 set -g @muxscribe-ai-interval '10'
 ```
+
+## Status Bar Indicator
+
+muxscribe sets the `@muxscribe-status` session option to `● REC` while recording. Add it to your status bar in `~/.tmux.conf`:
+
+```tmux
+# Right status bar example
+set -g status-right '#{@muxscribe-status} | %H:%M'
+```
+
+When recording is active the status bar shows `● REC`. When stopped, it's empty.
 
 ## Output
 
